@@ -87,10 +87,10 @@ describe('TicketContent', () => {
     )
   })
 
-  it('keeps non-GitHub messages as plain text', () => {
+  it('keeps plain-text channels as literal text', () => {
     render(
       <TicketContent
-        sourcePlatform="slack"
+        sourcePlatform="telegram"
         content="**This should remain literal Markdown**"
       />
     )

@@ -112,6 +112,16 @@ Select any row to open the ticket. The header gathers the key facts as badges: s
 
 The page has two columns. On the left is the conversation: the **Original Message**, the **AI Draft Answer**, the **AI Confidence** card, the **Conversation** (every later message in the thread), and the **Reply** form. On the right are the **Details**, **Related Questions**, **Update Status**, and **Activity** panels.
 
+The Original Message and every later message are shown the way the sender wrote them, cleaned up for each channel:
+
+| Channel | How messages appear |
+| --- | --- |
+| Discord, Discourse, GitHub, AI agents | Markdown is formatted: headings, lists, bold, italic, code, quotes, and links. |
+| Slack, Google Chat | Links, mentions, channel names, bold, italic, strikethrough, quotes, and code show as readable text instead of raw `<...>` syntax. |
+| Telegram, Email, Circle | Shown as plain text, exactly as received. |
+
+Links open in a new tab, and HTML in a message is shown as text, never run. Links that point to a page inside a workspace are shown as text, and file attachments stay as links under the message.
+
 ### Read the whole conversation
 
 A question is often a conversation, not one message. When someone keeps talking in the same place, their follow-ups join the ticket they belong to instead of opening new ones, and the **Conversation** section shows every message in order, oldest first. Each message carries its author, the time, and a label:
