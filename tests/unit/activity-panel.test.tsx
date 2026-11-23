@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render, screen, within } from '@testing-library/react'
-import { ActivityPanel } from '@/components/dashboard/activity-panel'
+import { ActivityPanel, type ChannelCount } from '@/components/dashboard/activity-panel'
 import type { Ticket } from '@/types'
 
 afterEach(cleanup)
@@ -48,6 +48,84 @@ describe('ActivityPanel', () => {
     const second = screen.getByText('Billing question').closest('a') as HTMLElement
     expect(second.getAttribute('href')).toBe('/tickets/9')
     expect(second.textContent).toContain('bob on Discord')
+  })
+
+  describe('channel chips', () => {
+    const chips = () => within(screen.getByRole('list', { name: 'New replies by channel' })).getAllByRole('link')
+    const renderWith = (channels: ChannelCount[]) =>
+      render(<ActivityPanel tickets={[ticket({})]} total={channels.reduce((n, c) => n + c.count, 0)} channels={channels} />)
+
+    it('shows a chip per channel in the given order, each linking to that channel’s unseen replies', () => {
+      renderWith([
+        { platform: 'github', count: 8 },
+        { platform: 'discord', count: 3 },
+        { platform: 'email', count: 1 },
+      ])
+      expect(chips().map((c) => c.textContent)).toEqual(['GitHub8', 'Discord3', 'Email1'])
+      expect(chips().map((c) => c.getAttribute('href'))).toEqual([
+        '/tickets?newActivity=1&sort=activity&platform=github',
+        '/tickets?newActivity=1&sort=activity&platform=discord',
+        '/tickets?newActivity=1&sort=activity&platform=email',
+      ])
+    })
+
+    it('gives each chip an accessible name with the exact count, singular for one', () => {
+      renderWith([
+        { platform: 'github', count: 150 },
+        { platform: 'email', count: 1 },
+      ])
+      expect(screen.getByRole('link', { name: 'GitHub, 150 tickets with new replies' })).toBeTruthy()
+      expect(screen.getByRole('link', { name: 'Email, 1 ticket with new replies' })).toBeTruthy()
+    })
+
+    it('shows counts exactly up to 99 and 99+ above', () => {
+      renderWith([
+        { platform: 'github', count: 100 },
+        { platform: 'slack', count: 99 },
+      ])
+      expect(chips().map((c) => c.textContent)).toEqual(['GitHub99+', 'Slack99'])
+    })
+
+    it('shows no chips when only one channel has unseen replies', () => {
+      renderWith([{ platform: 'github', count: 8 }])
+      expect(screen.queryByRole('list', { name: 'New replies by channel' })).toBeNull()
+    })
+
+    it('shows no chips without channel data', () => {
+      render(<ActivityPanel tickets={[ticket({})]} total={3} />)
+      expect(screen.queryByRole('list', { name: 'New replies by channel' })).toBeNull()
+    })
+
+    it('shows four channels as they are', () => {
+      renderWith([
+        { platform: 'github', count: 4 },
+        { platform: 'discord', count: 3 },
+        { platform: 'email', count: 2 },
+        { platform: 'slack', count: 1 },
+      ])
+      expect(chips().map((c) => c.textContent)).toEqual(['GitHub4', 'Discord3', 'Email2', 'Slack1'])
+    })
+
+    it('with more than four channels shows three chips plus an Other chip summing the rest, linking to the unfiltered list', () => {
+      renderWith([
+        { platform: 'github', count: 8 },
+        { platform: 'discord', count: 3 },
+        { platform: 'email', count: 2 },
+        { platform: 'slack', count: 2 },
+        { platform: 'telegram', count: 1 },
+      ])
+      expect(chips().map((c) => c.textContent)).toEqual(['GitHub8', 'Discord3', 'Email2', 'Other3'])
+      const other = screen.getByRole('link', { name: 'Other, 3 tickets with new replies' })
+      expect(other.getAttribute('href')).toBe('/tickets?newActivity=1&sort=activity')
+    })
+
+    it('wraps instead of scrolling sideways', () => {
+      renderWith([
+        { platform: 'github', count: 8 },
+        { platform: 'discord', count: 3 },
+      ])
+      expect(screen.getByRole('list', { name: 'New replies by channel' }).className).toContain('flex-wrap')
+    })
   })
 
   it('falls back to the content when there is no summary, and to "A customer" with no author', () => {

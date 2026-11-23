@@ -15,7 +15,8 @@ import {
   csatRatings,
   kbArticles,
 } from '../schema'
-import type { Ticket, CreateTicketInput, TicketFilters, TicketReply, TicketReplyRole, TicketEvent, AIDraftSkipReason } from '@/types'
+import { platformLabel } from '@/lib/tickets/platform-label'
+import type { Ticket, CreateTicketInput, TicketFilters, TicketReply, TicketReplyRole, TicketEvent, AIDraftSkipReason, SourcePlatform } from '@/types'
 
 function toTicket(row: typeof tickets.$inferSelect): Ticket {
   return {
@@ -263,6 +264,22 @@ export async function countUnseenActivityTickets(orgId: number): Promise<number>
   return row?.n ?? 0
 }
 
+/**
+ * Unseen-activity tickets per channel, built on the same condition as the
+ * panel's total so the two can't disagree. Largest first, ties by the
+ * channel's display name so the order is stable.
+ */
+export async function countUnseenActivityByPlatform(orgId: number): Promise<{ platform: SourcePlatform; count: number }[]> {
+  const rows = await getDb()
+    .select({ platform: tickets.sourcePlatform, count: sql<number>`COUNT(*)::int` })
+    .from(tickets)
+    .where(and(eq(tickets.orgId, orgId), unseenActivityCondition))
+    .groupBy(tickets.sourcePlatform)
+  return rows
+    .map((row) => ({ platform: row.platform as SourcePlatform, count: row.count }))
+    .sort((a, b) => b.count - a.count || platformLabel(a.platform).localeCompare(platformLabel(b.platform)))
+}
+
 /** Records that something happened on the conversation, without marking it as customer activity. */
 async function touchTicketActivity(ticketId: number): Promise<void> {
   await getDb().update(tickets).set({ lastActivityAt: new Date() }).where(eq(tickets.id, ticketId))
@@ -302,6 +319,7 @@ export async function getTickets(
     if (filters[filter]) conditions.push(ticketCardConditions[filter])
   }
   if (filters.newActivity) conditions.push(unseenActivityCondition)
+  if (filters.platform) conditions.push(eq(tickets.sourcePlatform, filters.platform))
   // Strictly older than the cursor row on the same (sort key, id) ordering
   // the query sorts by, so a page picks up exactly where the previous one
   // stopped regardless of inserts/deletes elsewhere in the table. The cursor's

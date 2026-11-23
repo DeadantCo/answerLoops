@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { LocalDate } from '@/components/ui/local-date'
 import { parseAttachmentLines } from '@/lib/slack/attachment-lines'
 import { platformLabel } from '@/lib/tickets/platform-label'
-import type { Ticket } from '@/types'
+import type { SourcePlatform, Ticket } from '@/types'
 
 function title(ticket: Ticket): string {
   if (ticket.ai_summary) return ticket.ai_summary
@@ -10,13 +10,56 @@ function title(ticket: Ticket): string {
   return text.slice(0, 80) || `Shared ${attachments.length} attachment${attachments.length === 1 ? '' : 's'}`
 }
 
+const ALL_ACTIVITY_HREF = '/tickets?newActivity=1&sort=activity'
+const MAX_CHIPS = 4
+
+export interface ChannelCount {
+  platform: SourcePlatform
+  count: number
+}
+
+interface ChannelChip {
+  key: string
+  label: string
+  count: number
+  href: string
+}
+
+function shownCount(count: number): string {
+  return count > 99 ? '99+' : String(count)
+}
+
+function chipName(chip: ChannelChip): string {
+  return `${chip.label}, ${chip.count} ${chip.count === 1 ? 'ticket' : 'tickets'} with new replies`
+}
+
+/**
+ * At most four chips, largest channel first. With more channels than that the
+ * last slot sums the rest into "Other", which links to the unfiltered list.
+ * A single channel gets none, since its chip would only repeat the total.
+ */
+export function channelChips(channels: ChannelCount[]): ChannelChip[] {
+  const active = channels.filter((channel) => channel.count > 0)
+  if (active.length < 2) return []
+  const toChip = ({ platform, count }: ChannelCount): ChannelChip => ({
+    key: platform,
+    label: platformLabel(platform),
+    count,
+    href: `${ALL_ACTIVITY_HREF}&platform=${encodeURIComponent(platform)}`,
+  })
+  if (active.length <= MAX_CHIPS) return active.map(toChip)
+  const other = active.slice(MAX_CHIPS - 1).reduce((sum, channel) => sum + channel.count, 0)
+  return [...active.slice(0, MAX_CHIPS - 1).map(toChip), { key: 'other', label: 'Other', count: other, href: ALL_ACTIVITY_HREF }]
+}
+
 /**
  * Tickets the customer has written on since the team last opened them, most
  * recent first. Shows nothing when there is nothing new, so a quiet workspace
  * has no empty box on its dashboard.
  */
-export function ActivityPanel({ tickets, total }: { tickets: Ticket[]; total: number }) {
+export function ActivityPanel({ tickets, total, channels = [] }: { tickets: Ticket[]; total: number; channels?: ChannelCount[] }) {
   if (tickets.length === 0) return null
+  const chips = channelChips(channels)
   return (
     <section
       aria-labelledby="activity-heading"
@@ -29,8 +72,24 @@ export function ActivityPanel({ tickets, total }: { tickets: Ticket[]; total: nu
             <span className="ml-2 rounded-full bg-blue-600 px-2 py-0.5 text-[0.6875rem] font-semibold text-white">{total}</span>
           </h2>
           <p className="mt-0.5 text-xs text-slate-500">Customers replied on these tickets. Opening one marks it seen.</p>
+          {chips.length > 0 && (
+            <ul aria-label="New replies by channel" className="mt-2 flex flex-wrap gap-1.5">
+              {chips.map((chip) => (
+                <li key={chip.key} className="max-w-full">
+                  <Link
+                    href={chip.href}
+                    aria-label={chipName(chip)}
+                    className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-blue-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 transition hover:border-blue-300 hover:bg-blue-50"
+                  >
+                    <span className="truncate">{chip.label}</span>
+                    <span className="font-semibold text-blue-700">{shownCount(chip.count)}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
-        <Link href="/tickets?newActivity=1&sort=activity" className="shrink-0 text-xs font-medium text-brand-600 hover:text-brand-700">
+        <Link href={ALL_ACTIVITY_HREF} className="shrink-0 text-xs font-medium text-brand-600 hover:text-brand-700">
           View all →
         </Link>
       </div>

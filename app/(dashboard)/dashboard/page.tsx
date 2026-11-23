@@ -1,4 +1,4 @@
-import { getTicketStats, getSLABreachedTickets, getTickets, getUnseenActivityTickets, countUnseenActivityTickets } from '@/lib/db/queries/tickets'
+import { getTicketStats, getSLABreachedTickets, getTickets, getUnseenActivityTickets, countUnseenActivityTickets, countUnseenActivityByPlatform } from '@/lib/db/queries/tickets'
 import { getDeflectionStats } from '@/lib/db/queries/analytics'
 import { deflectionRate as calculateDeflectionRate } from '@/lib/analytics/roi'
 import { StatsCards } from '@/components/dashboard/stats-cards'
@@ -20,13 +20,14 @@ function rowSummary(content: string): string {
 export default async function DashboardPage() {
   const session = await auth()
   const orgId = session?.orgId ?? DEFAULT_ORG_ID
-  const [stats, breachedTickets, recentTickets, deflectionStats, activityTickets, activityTotal] = await Promise.all([
+  const [stats, breachedTickets, recentTickets, deflectionStats, activityTickets, activityTotal, activityChannels] = await Promise.all([
     getTicketStats(orgId),
     getSLABreachedTickets(orgId),
     getTickets({ status: 'open' }, orgId, 6),
     getDeflectionStats(orgId),
     getUnseenActivityTickets(orgId),
     countUnseenActivityTickets(orgId),
+    countUnseenActivityByPlatform(orgId),
   ])
   const dashboardDeflectionRate = Math.round(
     calculateDeflectionRate(deflectionStats.deflected, deflectionStats.answered) * 100
@@ -58,7 +59,7 @@ export default async function DashboardPage() {
         </Link>
       </div>
 
-      <ActivityPanel tickets={activityTickets} total={activityTotal} />
+      <ActivityPanel tickets={activityTickets} total={activityTotal} channels={activityChannels} />
 
       {/* Stats */}
       <StatsCards {...stats} deflectionRate={dashboardDeflectionRate} />
