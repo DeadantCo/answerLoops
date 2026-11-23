@@ -5,6 +5,7 @@ import { Card, Cards } from 'fumadocs-ui/components/card'
 import { Tab, Tabs } from 'fumadocs-ui/components/tabs'
 import { Accordion, Accordions } from 'fumadocs-ui/components/accordion'
 import { Step, Steps } from 'fumadocs-ui/components/steps'
+import { DeflectionDiagram } from '@/components/docs/deflection-diagram'
 import { Hotspots } from '@/components/docs/hotspots'
 import { IntegrationFlow } from '@/components/docs/integration-flow'
 import { Mermaid } from '@/components/docs/mermaid'
@@ -93,6 +94,7 @@ export function getMDXComponents(components?: MDXComponents): MDXComponents {
     Accordion,
     Steps,
     Step,
+    DeflectionDiagram,
     IntegrationFlow,
     IntegrationLogo,
     LoopIllustration,
