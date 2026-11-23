@@ -35,7 +35,14 @@ const TEXT_EXTENSIONS = new Set(['.ts', '.tsx', '.mdx', '.md', '.json', '.txt', 
 describe('the public repository URL', () => {
   it('is the repository the git remote actually points at', () => {
     const remote = execSync('git remote get-url origin', { cwd: repoRoot, encoding: 'utf-8' }).trim()
-    expect(remote.replace(/\.git$/, '').toLowerCase()).toBe(GITHUB_URL.toLowerCase())
+    const normalized = remote.replace(/\.git$/, '').toLowerCase()
+    // The DeadantCo fork's origin can never equal the canonical URL, so there
+    // only the repository name is compared; every other checkout compares in full.
+    if (normalized.startsWith('https://github.com/deadantco/')) {
+      expect(normalized.split('/').pop()).toBe(GITHUB_URL.toLowerCase().split('/').pop())
+      return
+    }
+    expect(normalized).toBe(GITHUB_URL.toLowerCase())
   })
 
   it('never appears anywhere as the pre-migration path, which redirects to the private archive', () => {
