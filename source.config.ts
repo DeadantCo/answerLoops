@@ -7,6 +7,15 @@ import { z } from 'zod'
 // for group ordering, same shape Mintlify used).
 export const docs = defineDocs({
   dir: 'content/docs',
+  docs: {
+    schema: pageSchema.extend({
+      // Optional search keywords: related terms a reader might type that the
+      // page's own words don't contain ("webhook", "SSO", "self-host"). They
+      // are indexed by the docs search (lib/docs/search-index.ts) and do not
+      // render on the page.
+      tags: z.array(z.string()).optional(),
+    }),
+  },
 })
 
 // SEO/marketing blog. Flat under content/blog/ — every post, whatever its
