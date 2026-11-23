@@ -18,16 +18,10 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
-import { createRequire } from 'node:module'
-import { chromium, type Browser, type Page, type Locator } from '@playwright/test'
-import {
-  DEFAULT_TEXT_MASKS,
-  DEFAULT_VIEWPORT,
-  SHOTS,
-  type Shot,
-  type ShotMask,
-  type TextMaskRule,
-} from './shots.manifest'
+import { chromium, type Browser, type Locator } from '@playwright/test'
+import { DEFAULT_TEXT_MASKS, DEFAULT_VIEWPORT, SHOTS, type Shot } from './shots.manifest'
+import { applyMasks, assertSafe, pageStyles } from './page-safety'
+import { loadSharp, type Sharp } from './sharp'
 
 const ROOT = path.resolve(__dirname, '..', '..')
 const OUT_DIR = path.join(ROOT, 'public', 'docs', 'shots')
@@ -41,26 +35,6 @@ const TARGET_BYTES = 250 * 1024
 const DEVICE_SCALE_FACTOR = 2
 const NAV_TIMEOUT_MS = 120_000
 const SELECTOR_TIMEOUT_MS = 20_000
-
-// `sharp` ships with Next.js (image optimisation) but is not a direct
-// dependency of this repo, so resolve it from next's own location.
-// Only the calls this script makes are typed, because the package's own types
-// are not resolvable from the repo root either.
-interface SharpImage {
-  metadata(): Promise<{ width?: number; height?: number }>
-  resize(options: { width: number; withoutEnlargement?: boolean }): SharpImage
-  webp(options: { quality: number; effort: number }): SharpImage
-  png(): SharpImage
-  composite(layers: Array<{ input: Buffer }>): SharpImage
-  toFile(file: string): Promise<unknown>
-  toBuffer(options: { resolveWithObject: true }): Promise<{ data: Buffer; info: { width: number; height: number } }>
-}
-type Sharp = (input: Buffer) => SharpImage
-
-function loadSharp(): Sharp {
-  const fromNext = createRequire(require.resolve('next/package.json'))
-  return fromNext('sharp') as Sharp
-}
 
 interface PinOut {
   id: string
@@ -90,65 +64,6 @@ async function launchBrowser(): Promise<Browser> {
     )
     return await chromium.launch()
   }
-}
-
-// Hide dev-only chrome, the product feedback widget, toasts and animations.
-function pageStyles(): string {
-  return `
-    nextjs-portal, [data-nextjs-toast], [data-nextjs-dev-tools-button], [data-next-badge-root],
-    [data-sonner-toaster], [role="alert"][data-toast], .Toastify { display: none !important; }
-    *, *::before, *::after { animation: none !important; transition: none !important; caret-color: transparent !important; }
-  `
-}
-
-async function applyMasks(page: Page, masks: ShotMask[], rules: TextMaskRule[]): Promise<void> {
-  for (const mask of masks) {
-    const count = await page.locator(mask.selector).count()
-    if (count === 0) throw new Error(`mask selector matched nothing: ${mask.selector}`)
-    await page.locator(mask.selector).evaluateAll(
-      (els, m) => {
-        for (const el of els as HTMLElement[]) {
-          if (m.mode === 'blur') el.style.filter = 'blur(6px)'
-          else el.textContent = m.text ?? '••••••••'
-        }
-      },
-      { mode: mask.mode, text: mask.text },
-    )
-  }
-  await page.evaluate((list) => {
-    const compiled = list.map((r) => ({ re: r.pattern, to: r.replacement }))
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
-    const nodes: Text[] = []
-    while (walker.nextNode()) nodes.push(walker.currentNode as Text)
-    for (const node of nodes) {
-      let value = node.nodeValue ?? ''
-      for (const { re, to } of compiled) value = value.replace(re, to)
-      if (value !== node.nodeValue) node.nodeValue = value
-    }
-    // Inputs and the embed snippet textarea carry values, not text nodes.
-    for (const el of Array.from(document.querySelectorAll('input, textarea')) as Array<HTMLInputElement | HTMLTextAreaElement>) {
-      let value = el.value
-      for (const { re, to } of compiled) value = value.replace(re, to)
-      if (value !== el.value) el.value = value
-    }
-  }, rules)
-}
-
-// Last line of defence: nothing secret-looking or non-fictional may remain.
-async function assertSafe(page: Page, shotId: string): Promise<void> {
-  const problems = await page.evaluate(() => {
-    const text = document.body.innerText + '\n' + Array.from(document.querySelectorAll('input, textarea')).map((e) => (e as HTMLInputElement).value).join('\n')
-    const found: string[] = []
-    if (/[•·]{2,}\s?[A-Za-z0-9]{4}\b/.test(text)) found.push('a masked-token tail (last four characters)')
-    if (/\b[0-9a-f]{24,}\b/.test(text)) found.push('a long hex value')
-    if (/\bal_live_[0-9a-f]{4,}/.test(text)) found.push('an API key prefix')
-    if (/\beyJ[A-Za-z0-9_-]{10,}/.test(text)) found.push('a token-shaped string')
-    for (const m of text.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) ?? []) {
-      if (!/@([a-z0-9-]+\.)*example\.(com|org)$/i.test(m)) found.push(`a non-fictional email address (${m.replace(/^[^@]*/, '***')})`)
-    }
-    return found
-  })
-  if (problems.length) throw new Error(`[${shotId}] unsafe content on screen: ${problems.join('; ')}`)
 }
 
 async function runShot(browser: Browser, shot: Shot, preview: boolean, sharp: Sharp): Promise<ShotOut> {

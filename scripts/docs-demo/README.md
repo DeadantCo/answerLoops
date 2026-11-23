@@ -16,6 +16,8 @@ Files:
   (gitignored).
 - `open.ts` (`pnpm demo:open`): runs `session.ts`, then opens a browser already
   signed in as the demo owner. See "Browse the demo as the owner" below.
+- `clips.ts` (`pnpm docs:clips`): records short looping clips of scripted flows.
+  See "Clips" below. It runs the same checks as `seed.ts`.
 
 All three also refuse to run in production mode (`NODE_ENV=production`) or when
 a hosting-platform variable such as `RAILWAY_ENVIRONMENT` is set.
@@ -193,6 +195,73 @@ manual-setup block on the Integrations page.
 
 `scripts/docs-demo/.tmp/` holds the session cookie and the pin previews. It is
 gitignored; never commit it.
+
+## Clips
+
+`pnpm docs:clips` records short looping clips of scripted flows in the demo
+workspace, for the `<DemoClip>` docs component. Steps 1 to 4 above must be done
+and the app running, as for screenshots. It also needs `ffmpeg` (with the
+`libvpx-vp9` and `libx264` encoders) on the PATH.
+
+```bash
+DATABASE_URL=$DATABASE_URL pnpm docs:clips                  # every clip
+DATABASE_URL=$DATABASE_URL pnpm docs:clips approve-draft    # only these ids
+```
+
+Set `DOCS_BASE_URL=<app-url>` if the app is not on `http://localhost:3112`. The
+flows save settings, so start the app with `MOCK_EXTERNALS=1` as in step 3:
+connecting a channel would otherwise call the real chat platform.
+
+It refuses to run on a hosting platform, in production mode, against a database
+that is not local (`DATABASE_URL`, and `DIRECT_DATABASE_URL` if set) or against
+an app that is not on localhost, the same as the seed.
+
+The flows change the workspace (a draft is approved, a channel is reconnected),
+so the workspace is re-seeded with `pnpm docs:seed` before every clip and once
+more at the end. A clip therefore always starts from the same state, and the
+workspace is left as the seed makes it.
+
+For each clip it opens the page with the saved session (1280x720, light colour
+scheme, UTC, no animations), runs the optional `setup` steps outside the video,
+waits for the page to be ready, then records the `steps` with a visible mouse
+pointer. The same text masks and safety scan as screenshots run after every step,
+and secret-looking text is rewritten as it appears, so no recorded frame shows
+a credential or a non-fictional email address. Then it cuts the page load from
+the start and encodes with `ffmpeg`:
+
+- `public/docs/clips/<id>.webm` (VP9) and `<id>.mp4` (H.264), 15 fps, no audio,
+  each under 1 MB (the quality is stepped down until it fits, and the run fails
+  if it never does) and at most 15 seconds long. Metadata is stripped and
+  encoding is single-threaded so a re-run on the same machine is byte-stable
+  for the same recording.
+- `public/docs/clips/<id>.webp`, the still image taken at the `{ poster: true }`
+  step. It is shown before the video loads and to readers who prefer reduced
+  motion.
+- `lib/docs/clips.generated.json`, keys sorted by id (`title`, `description`,
+  file paths, size and duration). Running a single id updates only that entry.
+
+Commit all of them. Embed a clip in a docs page with
+`<DemoClip clip="<id>" />`; the build fails for an id that is not in the JSON.
+The component loads no video until the clip is within 200px of the viewport,
+plays it muted, looped and inline only while it is near the viewport (with a
+pause button), and shows the still with a play button instead when the reader
+prefers reduced motion. The
+`description` is shown under every clip as its text description.
+
+### Adding a clip
+
+Append an object to `CLIPS` in `clips.manifest.ts`:
+
+- `id` (kebab-case, becomes the file names), `title`, `description` (what the
+  clip shows, in a sentence or two), `route`.
+- `setup` (optional): steps that put the workspace in the starting state. They
+  run before recording and are not in the video.
+- `waitFor`: selectors that must be visible before recording starts.
+- `steps`: `click` (the pointer glides to the element first), `type` (typed key
+  by key), `scrollTo`, `waitFor`, `pause` (milliseconds) and exactly one
+  `{ poster: true }`. Keep a clip under about ten seconds.
+
+Anything typed must be fictional and must not look like a credential.
 
 ## Routes
 
