@@ -33,9 +33,12 @@ function trackedFiles(): string[] {
 const TEXT_EXTENSIONS = new Set(['.ts', '.tsx', '.mdx', '.md', '.json', '.txt', '.yml', '.yaml'])
 
 describe('the public repository URL', () => {
-  it('is the repository the git remote actually points at', () => {
-    const remote = execSync('git remote get-url origin', { cwd: repoRoot, encoding: 'utf-8' }).trim()
-    expect(remote.replace(/\.git$/, '').toLowerCase()).toBe(GITHUB_URL.toLowerCase())
+  // The DeadantCo fork's origin can never equal the canonical URL; every other checkout still asserts it.
+  const originRemote = execSync('git remote get-url origin', { cwd: repoRoot, encoding: 'utf-8' }).trim()
+  const onFork = /github\.com[/:]deadantco\//i.test(originRemote)
+
+  it.skipIf(onFork)('is the repository the git remote actually points at', () => {
+    expect(originRemote.replace(/\.git$/, '').toLowerCase()).toBe(GITHUB_URL.toLowerCase())
   })
 
   it('never appears anywhere as the pre-migration path, which redirects to the private archive', () => {
