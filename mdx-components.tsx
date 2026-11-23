@@ -11,6 +11,7 @@ import { Mermaid } from '@/components/docs/mermaid'
 import { IntegrationLogo } from '@/components/docs/integration-logo'
 import { LoopIllustration } from '@/components/docs/loop-illustration'
 import { Screenshot } from '@/components/docs/screenshot'
+import { SetupTour, TourStep } from '@/components/docs/setup-tour'
 import OpenAPIPage from '@/components/docs/openapi-page-server'
 import { channelListSentence } from '@/lib/marketing/channels'
 import {
@@ -93,6 +94,8 @@ export function getMDXComponents(components?: MDXComponents): MDXComponents {
     Accordion,
     Steps,
     Step,
+    SetupTour,
+    TourStep,
     IntegrationFlow,
     IntegrationLogo,
     LoopIllustration,
