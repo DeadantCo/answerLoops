@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it } from 'vitest'
-import { cleanup, render, screen, within } from '@testing-library/react'
-import { ActivityPanel } from '@/components/dashboard/activity-panel'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { ActivityPanel, ACTIVITY_PREVIEW_LIMIT } from '@/components/dashboard/activity-panel'
 import type { Ticket } from '@/types'
 
 afterEach(cleanup)
@@ -54,5 +54,63 @@ describe('ActivityPanel', () => {
     render(<ActivityPanel tickets={[ticket({ ai_summary: null, content: 'How do I reset my password?', source_author_name: null })]} total={1} />)
     const row = screen.getByText(/How do I reset my password\?/).closest('a') as HTMLElement
     expect(row.textContent).toContain('A customer on Slack')
+  })
+
+  it('starts collapsed, with a 99+ badge whose accessible name carries the exact count and a View all link with the exact total', () => {
+    render(<ActivityPanel tickets={[ticket({})]} total={200} />)
+    const toggle = screen.getByRole('button', { name: /Activity, 200 tickets with new customer replies/ })
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.getByText('99+')).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'View all 200 →' }).getAttribute('href')).toBe('/tickets?newActivity=1&sort=activity')
+  })
+
+  it('opens and closes again from the toggle, wiring aria-controls to the list', () => {
+    render(<ActivityPanel tickets={[ticket({})]} total={1} />)
+    const toggle = screen.getByRole('button', { name: /Activity, 1 ticket with new customer replies/ })
+    const list = document.getElementById(toggle.getAttribute('aria-controls') as string) as HTMLElement
+    expect(list.hidden).toBe(true)
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(list.hidden).toBe(false)
+    expect(within(list).getByText('Login fails')).toBeTruthy()
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(list.hidden).toBe(true)
+  })
+
+  it('shows the exact count up to 99 and 99+ above it, keeping the exact total in the accessible name', () => {
+    const { unmount } = render(<ActivityPanel tickets={[ticket({})]} total={99} />)
+    expect(screen.getByText('99')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Activity, 99 tickets/ })).toBeTruthy()
+    unmount()
+    render(<ActivityPanel tickets={[ticket({})]} total={100} />)
+    expect(screen.getByText('99+')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Activity, 100 tickets/ })).toBeTruthy()
+  })
+
+  it('previews at most the shared limit of rows', () => {
+    expect(ACTIVITY_PREVIEW_LIMIT).toBe(5)
+    const tickets = Array.from({ length: 8 }, (_, i) => ticket({ id: i + 1, org_ticket_number: i + 1, ai_summary: `Summary ${i + 1}` }))
+    render(<ActivityPanel tickets={tickets} total={8} />)
+    expect(screen.getByText('Summary 5')).toBeTruthy()
+    expect(screen.queryByText('Summary 6')).toBeNull()
+  })
+
+  it('shows the footer only when the total is above the preview limit', () => {
+    const five = Array.from({ length: 5 }, (_, i) => ticket({ id: i + 1, org_ticket_number: i + 1 }))
+    const { unmount } = render(<ActivityPanel tickets={five} total={5} />)
+    expect(screen.queryByText(/Showing the latest/)).toBeNull()
+    unmount()
+    render(<ActivityPanel tickets={five} total={200} />)
+    const footer = screen.getByText('Showing the latest 5 of 200').parentElement as HTMLElement
+    const link = within(footer).getByText('View all 200 \u2192').closest('a') as HTMLElement
+    expect(link.getAttribute('href')).toBe('/tickets?newActivity=1&sort=activity')
+  })
+
+  it('keeps the View all link outside the toggle button', () => {
+    render(<ActivityPanel tickets={[ticket({})]} total={14} />)
+    const toggle = screen.getByRole('button', { name: /Activity, 14 tickets/ })
+    expect(toggle.querySelector('a')).toBeNull()
+    expect(screen.getByRole('link', { name: 'View all 14 \u2192' })).toBeTruthy()
   })
 })
