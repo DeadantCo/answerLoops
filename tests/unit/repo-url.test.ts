@@ -30,11 +30,18 @@ function trackedFiles(): string[] {
     .filter(Boolean)
 }
 
+function originUrl(): string {
+  return execSync('git remote get-url origin', { cwd: repoRoot, encoding: 'utf-8' }).trim()
+}
+
+// The DeadantCo fork's origin can never equal the canonical repository URL.
+const isDeadantCoFork = /github\.com[/:]deadantco\//i.test(originUrl())
+
 const TEXT_EXTENSIONS = new Set(['.ts', '.tsx', '.mdx', '.md', '.json', '.txt', '.yml', '.yaml'])
 
 describe('the public repository URL', () => {
-  it('is the repository the git remote actually points at', () => {
-    const remote = execSync('git remote get-url origin', { cwd: repoRoot, encoding: 'utf-8' }).trim()
+  it.skipIf(isDeadantCoFork)('is the repository the git remote actually points at', () => {
+    const remote = originUrl()
     expect(remote.replace(/\.git$/, '').toLowerCase()).toBe(GITHUB_URL.toLowerCase())
   })
 
