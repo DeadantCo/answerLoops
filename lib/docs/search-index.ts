@@ -113,13 +113,24 @@ async function structuredDataOf(page: DocsPage): Promise<StructuredData> {
   throw new Error(`No structured data for docs page ${page.url}`)
 }
 
+/** The page's frontmatter `tags`, trimmed, with blanks and repeats dropped. */
+function pageTags(page: DocsPage): string[] {
+  const tags = (page.data as { tags?: string[] }).tags ?? []
+  return [...new Set(tags.map((tag) => tag.trim()).filter(Boolean))]
+}
+
 /**
  * The search index entry for one docs page, shaped like fumadocs' default one
  * (title, description, url and structured data) but with every record
- * rewritten as plain text and the ones that become empty dropped.
+ * rewritten as plain text and the ones that become empty dropped. Frontmatter
+ * tags are added as a short leading "Related topics" record: the search ranks a
+ * short record that matches above a long paragraph that mentions the word, so a
+ * tag outranks an incidental body mention, and the record tells the reader why
+ * the page matched.
  */
 export async function buildDocsSearchIndex(page: DocsPage) {
   const structuredData = await structuredDataOf(page)
+  const tags = pageTags(page)
   return {
     title: page.data.title ?? page.url,
     description: page.data.description,
@@ -127,9 +138,12 @@ export async function buildDocsSearchIndex(page: DocsPage) {
     id: page.url,
     structuredData: {
       ...structuredData,
-      contents: structuredData.contents
-        .map((item) => ({ ...item, content: plainSearchText(item.content) }))
-        .filter((item) => item.content.length > 0),
+      contents: [
+        ...(tags.length > 0 ? [{ heading: undefined, content: `Related topics: ${tags.join(', ')}` }] : []),
+        ...structuredData.contents
+          .map((item) => ({ ...item, content: plainSearchText(item.content) }))
+          .filter((item) => item.content.length > 0),
+      ],
     },
   }
 }

@@ -244,6 +244,11 @@ working example over a description of one. If you're documenting a new
 integration or capability, add it to the right `meta.json` so it shows up in
 navigation.
 
+A docs page can list `tags` in its frontmatter (for example
+`tags: [webhook, self-host]`): related words a reader might search for that the
+page doesn't use itself. Docs search matches them like page text, and they don't
+show on the page. Keep them to a handful of specific terms.
+
 ## Contributing to the blog
 
 Posts live under `content/blog/` as `.mdx` files. Look at an existing post
