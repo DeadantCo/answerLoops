@@ -193,6 +193,19 @@ const nextConfig: NextConfig = {
       },
     ]
   },
+  async rewrites() {
+    // A catch-all must be the last URL segment, so the per-page share image
+    // cannot be an opengraph-image file next to app/docs/[...slug]. It is a
+    // route handler at /docs/og/<slug>, served from the conventional URL.
+    return {
+      beforeFiles: [
+        {
+          source: '/docs/:path+/opengraph-image',
+          destination: '/docs/og/:path+',
+        },
+      ],
+    }
+  },
   async redirects() {
     return [
       // Old Mintlify root ("what is answerLoops") lived at the docs

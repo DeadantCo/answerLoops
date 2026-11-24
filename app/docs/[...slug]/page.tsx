@@ -5,6 +5,7 @@ import { DocsPage, DocsBody, DocsDescription, DocsTitle } from 'fumadocs-ui/page
 import { docsSource } from '@/lib/docs/source'
 import { getMDXComponents } from '@/mdx-components'
 import { PageSchema } from '@/components/marketing/page-schema'
+import { DOCS_SHARE_IMAGE_SIZE, docsShareImageAlt, docsShareImagePath } from '@/lib/docs/share-image'
 
 export default async function DocPage({
   params,
@@ -45,9 +46,20 @@ export async function generateMetadata({
   const page = docsSource.getPage(slug)
   if (!page) notFound()
 
-  return publicPageMetadata({
+  const metadata = publicPageMetadata({
     title: page.data.title,
     description: page.data.description ?? 'Setup and product guides for answerLoops community support.',
     path: page.url,
   })
+  const image = {
+    url: docsShareImagePath(page.url),
+    ...DOCS_SHARE_IMAGE_SIZE,
+    alt: docsShareImageAlt(page.data.title),
+  }
+
+  return {
+    ...metadata,
+    openGraph: { ...metadata.openGraph, images: [image] },
+    twitter: { ...metadata.twitter, images: [image] },
+  }
 }
