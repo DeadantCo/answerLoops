@@ -93,6 +93,55 @@ describe('TicketsPage card filters', () => {
     expect(screen.getByRole('link', { name: 'Clear card filter' })).toHaveAttribute('href', '/tickets')
   })
 
+  it('passes a known ?platform= to the query and selects it in the channel filter', async () => {
+    await renderPage({ platform: 'github', newActivity: '1', sort: 'activity', status: 'open' })
+
+    expect(getTickets).toHaveBeenCalledWith(
+      expect.objectContaining({ platform: 'github', newActivity: true, sort: 'activity', status: 'open' }),
+      7,
+      51,
+      undefined,
+      true
+    )
+    expect(screen.getByRole('combobox', { name: 'Channel' })).toHaveValue('github')
+  })
+
+  it('offers All channels plus one option per channel with its display name', async () => {
+    await renderPage({})
+
+    const select = screen.getByRole('combobox', { name: 'Channel' })
+    expect(select).toHaveValue('')
+    const options = Array.from(select.querySelectorAll('option')).map((o) => [o.getAttribute('value'), o.textContent])
+    expect(options).toEqual([
+      ['', 'All channels'],
+      ['discord', 'Discord'],
+      ['slack', 'Slack'],
+      ['google_chat', 'Google Chat'],
+      ['telegram', 'Telegram'],
+      ['email', 'Email'],
+      ['github', 'GitHub'],
+      ['discourse', 'Discourse'],
+      ['circle', 'Circle'],
+      ['mcp', 'Agent'],
+    ])
+  })
+
+  it('ignores an unknown ?platform= value instead of failing', async () => {
+    await renderPage({ platform: 'carrier-pigeon' })
+
+    expect(getTickets).toHaveBeenCalledWith(expect.objectContaining({ platform: undefined }), 7, 51, undefined, true)
+    expect(screen.getByRole('combobox', { name: 'Channel' })).toHaveValue('')
+  })
+
+  it('keeps the channel through the Load more link and when clearing card filters', async () => {
+    getTickets.mockResolvedValue(Array.from({ length: 51 }, (_, i) => ({ id: i + 1, created_at: '2026-01-01' })))
+    await renderPage({ platform: 'email', needsReview: '1' })
+
+    const href = screen.getByRole('link', { name: 'Load more' }).getAttribute('href')!
+    expect(new URLSearchParams(href.split('?')[1]).get('platform')).toBe('email')
+    expect(screen.getByRole('link', { name: 'Clear card filter' })).toHaveAttribute('href', '/tickets?platform=email')
+  })
+
   it('carries card filters through the Load more link', async () => {
     getTickets.mockResolvedValue(Array.from({ length: 51 }, (_, i) => ({ id: i + 1, created_at: '2026-01-01' })))
     await renderPage({ pendingDraft: '1' })

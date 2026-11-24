@@ -366,6 +366,8 @@ export interface TicketFilters {
   slaBreached?: boolean
   /** Tickets with customer replies the team hasn't opened yet. */
   newActivity?: boolean
+  /** Tickets that came in through one channel. */
+  platform?: SourcePlatform
   /** Order by creation date (default) or by the most recent activity. */
   sort?: 'created' | 'activity'
 }

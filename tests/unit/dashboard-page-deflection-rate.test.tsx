@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
   statsCards: vi.fn(),
   getDeflectionStats: vi.fn(),
   getUnseenActivityTickets: vi.fn(async (): Promise<{ tickets: never[]; total: number; snapshot?: string }> => ({ tickets: [], total: 0 })),
+  countUnseenActivityByPlatform: vi.fn(async (): Promise<{ platform: string; count: number }[]> => []),
   activityDisclosure: vi.fn(),
   user: { name: 'Sam Lee' } as { id?: string; name: string },
 }))
@@ -19,6 +20,7 @@ vi.mock('@/lib/db/queries/tickets', () => ({
   getSLABreachedTickets: async () => [],
   getTickets: async () => [],
   getUnseenActivityTickets: h.getUnseenActivityTickets,
+  countUnseenActivityByPlatform: h.countUnseenActivityByPlatform,
 }))
 vi.mock('@/lib/db/queries/analytics', () => ({ getDeflectionStats: h.getDeflectionStats }))
 vi.mock('@/components/dashboard/stats-cards', () => ({
@@ -100,5 +102,26 @@ describe('DashboardPage activity proof', () => {
     h.user = { id: '42', name: 'Sam Lee' }
     h.getUnseenActivityTickets.mockResolvedValue({ tickets: [], total: 0 })
     expect((await renderedProps()).proof).toBeUndefined()
+  })
+})
+
+describe('DashboardPage channel breakdown', () => {
+  const snapshot = '2026-10-02T00:00:00.123456Z|10:12:10'
+
+  it('counts channels in the same organization and at the same snapshot as the badge total', async () => {
+    h.getDeflectionStats.mockResolvedValue({ deflected: 0, answered: 0 })
+    h.getUnseenActivityTickets.mockResolvedValue({ tickets: [], total: 11, snapshot })
+    h.countUnseenActivityByPlatform.mockResolvedValue([{ platform: 'github', count: 8 }, { platform: 'discord', count: 3 }])
+    render(await DashboardPage())
+
+    expect(h.countUnseenActivityByPlatform).toHaveBeenCalledExactlyOnceWith(7, snapshot)
+  })
+
+  it('skips the channel query when nothing is waiting', async () => {
+    h.getDeflectionStats.mockResolvedValue({ deflected: 0, answered: 0 })
+    h.getUnseenActivityTickets.mockResolvedValue({ tickets: [], total: 0 })
+    render(await DashboardPage())
+
+    expect(h.countUnseenActivityByPlatform).not.toHaveBeenCalled()
   })
 })

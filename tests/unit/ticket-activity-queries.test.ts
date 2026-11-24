@@ -89,7 +89,57 @@ describe('unseen activity queries', () => {
   })
 })
 
+describe('countUnseenActivityByPlatform', () => {
+  const snapshot = '2026-10-02T00:00:00.123456Z|10:11:'
+
+  it('groups by channel with the unseen condition, scoped to one org and bounded by the snapshot cutoff', async () => {
+    const { calls, tq } = await withDb(() => [['github', 8]])
+    await tq.countUnseenActivityByPlatform(3, snapshot)
+    const q = lower(calls[0].sql)
+    expect(q).toContain('count(*)')
+    expect(q).toContain('"tickets"."org_id" = $1')
+    expect(q).toMatch(UNSEEN)
+    expect(q).toMatch(/"tickets"\."last_customer_reply_at" <= \$2::timestamptz/)
+    expect(q).toMatch(/group by "tickets"\."source_platform"/)
+    expect(calls[0].params).toEqual([3, '2026-10-02T00:00:00.123456Z'])
+  })
+
+  it('orders largest first, then by channel display name', async () => {
+    const { tq } = await withDb(() => [['slack', 3], ['mcp', 3], ['github', 8], ['discord', 3], ['email', 1]])
+    expect(await tq.countUnseenActivityByPlatform(3, snapshot)).toEqual([
+      { platform: 'github', count: 8 },
+      { platform: 'mcp', count: 3 },
+      { platform: 'discord', count: 3 },
+      { platform: 'slack', count: 3 },
+      { platform: 'email', count: 1 },
+    ])
+  })
+
+  it('is empty when nothing is unseen', async () => {
+    const { tq } = await withDb()
+    expect(await tq.countUnseenActivityByPlatform(3, snapshot)).toEqual([])
+  })
+})
+
 describe('getTickets activity options', () => {
+  it('platform filters on the source channel alongside the org and other filters', async () => {
+    const { calls, tq } = await withDb()
+    await tq.getTickets({ platform: 'github', newActivity: true, status: 'open' }, 3)
+    const q = lower(calls[0].sql)
+    expect(q).toContain('"tickets"."org_id" = $1')
+    expect(q).toContain('"tickets"."status" = $2')
+    expect(q).toMatch(UNSEEN)
+    expect(q).toMatch(/"tickets"\."source_platform" = \$3/)
+    expect(calls[0].params.slice(0, 3)).toEqual([3, 'open', 'github'])
+  })
+
+  it('no platform means no source_platform condition', async () => {
+    const { calls, tq } = await withDb()
+    await tq.getTickets({}, 3)
+    const q = lower(calls[0].sql)
+    expect(q.slice(q.indexOf(' where '))).not.toContain('source_platform')
+  })
+
   it('default ordering is by created_at and ignores last_activity_at', async () => {
     const { calls, tq } = await withDb()
     await tq.getTickets({}, 3)
