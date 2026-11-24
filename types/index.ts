@@ -68,6 +68,7 @@ export interface Ticket {
   last_customer_reply_at: string | null
   /** When the team last opened the ticket. */
   last_seen_at: string | null
+  has_new_activity?: boolean
 }
 
 export interface TicketReply {
@@ -169,6 +170,18 @@ export interface PriorAnswer {
   answer: string
   /** Set when the answer came from a knowledge-base article, so its use can be counted. */
   articleId?: number
+}
+
+/** What the website widget's knowledge-base search hands the model (lib/db/queries/kb.ts getWidgetKBContext). */
+export interface WidgetKBContext {
+  /** The articles put in front of the model. Empty when nothing came close. */
+  articles: PriorAnswer[]
+  /**
+   * Whether `articles` cleared the match bar. False with articles present means
+   * they are near misses: the closest the knowledge base has, which may or may
+   * not cover the question.
+   */
+  matched: boolean
 }
 
 /**
