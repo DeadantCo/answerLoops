@@ -42,7 +42,7 @@ describe('TicketsPage card filters', () => {
   ])('passes ?%s=1 to the query and shows a "%s" indicator', async (param, label) => {
     await renderPage({ [param]: '1' })
 
-    expect(getTickets).toHaveBeenCalledWith(expect.objectContaining({ [param]: true }), 7, 51, undefined)
+    expect(getTickets).toHaveBeenCalledWith(expect.objectContaining({ [param]: true }), 7, 51, undefined, true)
     const indicator = screen.getByTestId('card-filter-indicator')
     expect(indicator).toHaveTextContent(`Filtered by${label}`)
   })
@@ -54,7 +54,8 @@ describe('TicketsPage card filters', () => {
       expect.objectContaining({ needsReview: undefined, slaBreached: undefined }),
       7,
       51,
-      undefined
+      undefined,
+      true
     )
     expect(screen.queryByTestId('card-filter-indicator')).not.toBeInTheDocument()
   })
@@ -99,7 +100,8 @@ describe('TicketsPage card filters', () => {
       expect.objectContaining({ platform: 'github', newActivity: true, sort: 'activity', status: 'open' }),
       7,
       51,
-      undefined
+      undefined,
+      true
     )
     expect(screen.getByRole('combobox', { name: 'Channel' })).toHaveValue('github')
   })
@@ -127,7 +129,7 @@ describe('TicketsPage card filters', () => {
   it('ignores an unknown ?platform= value instead of failing', async () => {
     await renderPage({ platform: 'carrier-pigeon' })
 
-    expect(getTickets).toHaveBeenCalledWith(expect.objectContaining({ platform: undefined }), 7, 51, undefined)
+    expect(getTickets).toHaveBeenCalledWith(expect.objectContaining({ platform: undefined }), 7, 51, undefined, true)
     expect(screen.getByRole('combobox', { name: 'Channel' })).toHaveValue('')
   })
 

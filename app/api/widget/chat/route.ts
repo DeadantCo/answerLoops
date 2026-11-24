@@ -9,9 +9,11 @@ import type { MastraModelConfig } from '@mastra/core/llm'
 import { chatModel, DEFAULT_FAST_MODEL, NoAIProviderConfiguredError } from '@/lib/ai/models'
 import { embedQueryCached } from '@/lib/widget/embed-cache'
 import { buildGenuiTools } from '@/lib/widget/genui-tools'
+import { followUpsAvailable, groundFollowUps } from '@/lib/widget/follow-ups'
+import { orgHasFeature } from '@/lib/billing/entitlements-server'
 import { flattenMastraStream } from '@/lib/widget/mastra-stream'
-import { REFERENCE_MATERIAL_NOTICE, renderReferenceBlock } from '@/lib/ai/reference-block'
-import { getKBContext } from '@/lib/db/queries/kb'
+import { getWidgetKBContext } from '@/lib/db/queries/kb'
+import type { WidgetKBContext } from '@/types'
 import { captureUnansweredQuestion } from '@/lib/kb/review-capture'
 import { countArticleUsage, newAnswerId, recordAnswerSources } from '@/lib/kb/usage'
 import { scheduleSourceSupport } from '@/lib/kb/support/runner'
@@ -26,8 +28,11 @@ import { reserveGeneration, commitDeflection, releaseGeneration } from '@/lib/bi
 import { logger } from '@/lib/logger'
 import { requestsHuman, isGreetingOrAck, type WidgetLeadCaptureMode } from '@/lib/widget/lead-capture'
 import { isValidWidgetToken, isValidVisitorId, isValidTurnId } from '@/lib/widget/request-validation'
-import { setLeadSignal } from '@/lib/widget/lead-signal-stash'
+import { setLeadSignal, setTurnAnswer } from '@/lib/widget/lead-signal-stash'
 import { buildWidgetInstructions } from '@/lib/widget/instructions'
+import { createTurnContext } from '@/lib/widget/turn-context'
+import { buildSearchTool, SEARCH_TOOL_NAME } from '@/lib/widget/search-tool'
+import { ToolCallFilter } from '@mastra/core/processors'
 import type { WidgetAnswerScope } from '@/lib/widget/answer-scope'
 
 const MOD = 'api/widget/chat'
@@ -84,7 +89,7 @@ const MAX_CONTEXT_ARTICLES = 5
 // whole-message cap.
 const MAX_QUERY_CHARS = MAX_MESSAGE_CHARS
 
-type KBContext = { summary: string; answer: string; articleId?: number }[]
+const NO_CONTEXT: WidgetKBContext = { articles: [], matched: false }
 
 export interface PendingRun {
   org: {
@@ -96,6 +101,9 @@ export interface PendingRun {
     // from the request.
     widget_answer_scope: WidgetAnswerScope
     widget_guidance: string | null
+    // The owner's switch for follow-up suggestions (the workspace row the token
+    // resolved to). Whether the plan includes them is checked per run.
+    widget_appearance?: { followUpsEnabled: boolean }
   }
   widgetToken: string
   // Which widget message this run answers; scopes the lead-capture signal so
@@ -108,21 +116,34 @@ export interface PendingRun {
   // Knowledge-base retrieval, started in the onRequest hook so it overlaps
   // model resolution instead of queuing behind it. Never rejects. Absent when
   // a caller stashes a run without one (the factory then retrieves itself).
-  context?: Promise<KBContext>
+  context?: Promise<WidgetKBContext>
   // performance.now() at request arrival, for the timing log line.
   startedAt?: number
 }
 
-// Retrieval is best-effort: an embedding or search failure means the model
-// answers without context rather than the visitor seeing an error.
-async function retrieveContext(query: string, orgId: number): Promise<KBContext> {
+// One knowledge-base search for the widget. Throws on an embedding or database
+// failure; the model's own searches (lib/widget/search-tool.ts) report that to
+// the model as "search unavailable".
+async function searchKnowledgeBase(query: string, orgId: number): Promise<WidgetKBContext> {
+  const vector = await embedQueryCached(query, orgId)
+  return getWidgetKBContext(vector, MAX_CONTEXT_ARTICLES, orgId)
+}
+
+// The search before the model runs is best-effort: an embedding or search
+// failure means the model answers without context rather than the visitor
+// seeing an error.
+async function retrieveContext(query: string, orgId: number): Promise<WidgetKBContext> {
   try {
-    const vector = await embedQueryCached(query, orgId)
-    return await getKBContext(vector, MAX_CONTEXT_ARTICLES, orgId)
+    return await searchKnowledgeBase(query, orgId)
   } catch {
-    return []
+    return NO_CONTEXT
   }
 }
+
+// Room for two knowledge-base searches, a refused third attempt, one card and
+// the reply itself, with one step to spare. Set here rather than left to the
+// library default.
+const MAX_AGENT_STEPS = 6
 
 // Validated request context, handed from the `onRequest` hook to the AI SDK
 // factory below by reference (org rows and resolved model objects aren't
@@ -422,12 +443,20 @@ async function runWidgetAgent(ctx: AgentFactoryContext) {
   }
   const { org, widgetToken, turnId, model, query, visitorId, reservationId } = run
 
-  const allContext = await (run.context ?? retrieveContext(query, org.id))
-  const contextBlock = allContext.length
-    ? `\n\nKnowledge base context — use this to answer. ${REFERENCE_MATERIAL_NOTICE}\n${renderReferenceBlock(
-        allContext.map((c) => ({ question: c.summary, answer: c.answer }))
-      )}`
-    : ''
+  // Checked alongside retrieval so the plan lookups add no waiting of their own.
+  // Whether visitors can flag this workspace's answers is the same plan check the
+  // panel page makes (app/widget/[widgetToken]/page.tsx); a lookup that fails
+  // counts as no, so the answer itself is never held up by it.
+  const [retrieved, followUps, flagsAvailable] = await Promise.all([
+    run.context ?? retrieveContext(query, org.id),
+    followUpsAvailable({ id: org.id, followUpsEnabled: org.widget_appearance?.followUpsEnabled !== false }),
+    orgHasFeature(org.id, 'kb_review_queue').catch(() => false),
+  ])
+  // Everything the model is given this turn: what was found up front plus
+  // whatever its own searches add. Strong matches and near misses alike; usage
+  // counts, answer sources, the support check and card grounding all read it.
+  const turn = createTurnContext(retrieved)
+  const contextBlock = turn.groundedText()
 
   // resourceId scopes memory to this org+visitor; threadId reuses the same
   // id since the widget has no "start a new conversation" affordance — a
@@ -446,10 +475,21 @@ async function runWidgetAgent(ctx: AgentFactoryContext) {
       answerScope: org.widget_answer_scope,
       guidance: org.widget_guidance,
       contextBlock,
+      followUps,
+      search: true,
     }),
     model: model as MastraModelConfig,
     memory: getWidgetChatMemory(),
-    tools: buildGenuiTools(contextBlock),
+    // Earlier turns' search results stay in the saved conversation but are not
+    // sent to the model again, so a later message never pays to re-read them.
+    inputProcessors: [new ToolCallFilter({ exclude: [SEARCH_TOOL_NAME] })],
+    tools: {
+      ...buildGenuiTools(
+        () => turn.groundedText(),
+        followUps ? { followUps: { ground: (labels) => groundFollowUps(org.id, labels) } } : {}
+      ),
+      [SEARCH_TOOL_NAME]: buildSearchTool({ turn, search: (q) => searchKnowledgeBase(q, org.id) }),
+    },
   })
 
   // One id for this generation, so a repeated completion callback records the
@@ -463,10 +503,11 @@ async function runWidgetAgent(ctx: AgentFactoryContext) {
   const result = await widgetAgent.stream(query, {
     memory: { thread: resourceId, resource: resourceId },
     modelSettings: { maxOutputTokens: 600 },
+    maxSteps: MAX_AGENT_STEPS,
     // The stream failed after it started: record what was supplied with the
     // outcome failed. If onFinish already recorded this answer, this is a no-op.
     onError: async () => {
-      await recordAnswerSources({ orgId: org.id, answerId, surface: 'widget', outcome: 'failed', context: allContext })
+      await recordAnswerSources({ orgId: org.id, answerId, surface: 'widget', outcome: 'failed', context: turn.articles() })
     },
     // Billed unconditionally once the stream completes — this endpoint has
     // no confidence-assessment step like the MCP/ticket pipelines do, so a
@@ -491,18 +532,37 @@ async function runWidgetAgent(ctx: AgentFactoryContext) {
           turnId,
           requestsHuman(query)
             ? 'human-requested'
-            : allContext.length === 0 && !isGreetingOrAck(query)
+            : // Near misses count as found: the model may well have answered from
+              // them, and offering "we couldn't find anything" under an answer
+              // reads as broken. Only an empty search is a failed answer here.
+              turn.articles().length === 0 && !isGreetingOrAck(query)
               ? 'no-kb-match'
               : 'none',
           query
         )
       }
+      // The recorded answer this turn produced, with the question and reply,
+      // held for the same short window so the widget can ask for a signed
+      // reference to it and let the visitor flag it (app/api/widget/lead-signal,
+      // app/api/widget/flag). Written here, synchronously and before the awaited
+      // work below, for the same reason as the signal above: the widget's lookup
+      // arrives as soon as the stream closes. Only for a workspace whose plan
+      // lets visitors flag, and nothing is kept past that window for an answer
+      // nobody flags.
+      if (flagsAvailable) {
+        setTurnAnswer(widgetToken, visitorId, turnId, {
+          answerId,
+          question: query,
+          answer: typeof event?.text === 'string' ? event.text : '',
+        })
+      }
 
       await commitDeflection(org.id, reservationId).catch((e) => {
         logger.error('widget chat commitDeflection failed', { module: MOD, orgId: org.id, error: e })
       })
-      await countArticleUsage(org.id, allContext)
-      await recordAnswerSources({ orgId: org.id, answerId, surface: 'widget', outcome: 'generated', context: allContext })
+      const supplied = turn.articles()
+      await countArticleUsage(org.id, supplied)
+      await recordAnswerSources({ orgId: org.id, answerId, surface: 'widget', outcome: 'generated', context: supplied })
       // Scheduled, never awaited: assesses how well the supplied articles
       // support this reply once the response has finished, and cannot change it.
       scheduleSourceSupport({
@@ -511,18 +571,25 @@ async function runWidgetAgent(ctx: AgentFactoryContext) {
         surface: 'widget',
         question: query,
         answer: typeof event?.text === 'string' ? event.text : '',
-        context: allContext,
+        context: supplied,
       })
       // No article matched, so whatever was just said came from general
-      // knowledge. Queue the question (never the visitor's identity) for a
-      // person to review before anything like it is treated as a KB answer.
-      if (allContext.length === 0) {
+      // knowledge or from a near miss. Queue the question (never the visitor's
+      // identity) for a person to review before anything like it is treated as
+      // a KB answer; a near-miss answer is exactly the kind worth a closer look.
+      //
+      // After a follow-up search, the model's standalone question ("Team plan
+      // price") is what a reviewer can act on; the visitor's own words ("and
+      // for teams?") are kept beside it.
+      if (!turn.matched()) {
+        const reviewQuestion = turn.lastSearchQuery ?? query
         await captureUnansweredQuestion({
           orgId: org.id,
           source: 'widget',
-          question: query,
+          question: reviewQuestion,
+          ...(turn.lastSearchQuery ? { visitorMessage: query } : {}),
           answer: typeof event?.text === 'string' ? event.text : '',
-          embedding: await embedQueryCached(query, org.id).catch(() => undefined),
+          embedding: await embedQueryCached(reviewQuestion, org.id).catch(() => undefined),
         })
       }
     },
@@ -541,7 +608,9 @@ async function runWidgetAgent(ctx: AgentFactoryContext) {
       ttftMs: Math.round(performance.now() - run.startedAt),
     })
   }
-  return { fullStream: flattenMastraStream(result.fullStream as unknown as AsyncIterable<unknown>, onFirstText) }
+  // Search calls stay on the server: their results are whole articles, which
+  // the browser would otherwise keep and resend with every later message.
+  return { fullStream: flattenMastraStream(result.fullStream as unknown as AsyncIterable<unknown>, onFirstText, [SEARCH_TOOL_NAME]) }
 }
 
 const runtime = new CopilotRuntime({

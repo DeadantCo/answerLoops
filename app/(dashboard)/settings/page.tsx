@@ -9,6 +9,8 @@ import { getWidgetTokenAction, regenerateWidgetTokenAction, saveWidgetOriginsAct
 import type { WidgetLeadCaptureMode } from '@/lib/widget/lead-capture'
 import type { WidgetAnswerScope } from '@/lib/widget/answer-scope'
 import { WidgetAnswersSettings } from '@/components/settings/widget-answers'
+import { WidgetAppearanceSettings } from '@/components/settings/widget-appearance'
+import { EMPTY_WIDGET_APPEARANCE, type WidgetAppearance } from '@/lib/widget/appearance'
 import { saveAIConfigAction, clearAIConfigAction, testAIConfigAction, listModelsAction, includedEmbeddingsAvailableAction } from '@/lib/actions/ai-config'
 import type { AIConnectionResult } from '@/lib/ai/test-connection'
 import type { BudgetStatus } from '@/lib/billing/platform-ai-budget'
@@ -22,6 +24,7 @@ import type { SLAConfig } from '@/types'
 import { subscribeLiveEvents } from '@/lib/live-events'
 import { useToast, Toast, ReadOnlyRow } from '@/components/settings/shared'
 import { SourceSupportSection } from '@/components/settings/source-support'
+import { KbPageTitlesSection } from '@/components/settings/kb-page-titles'
 
 interface Member {
   membership_id: number
@@ -890,6 +893,9 @@ export function WidgetSection() {
   const [leadCaptureMsg, setLeadCaptureMsg] = useState<string | null>(null)
   const [answerScope, setAnswerScope] = useState<WidgetAnswerScope>('knowledge-base-only')
   const [guidance, setGuidance] = useState<string | null>(null)
+  const [appearance, setAppearance] = useState<WidgetAppearance>(EMPTY_WIDGET_APPEARANCE)
+  const [customizationAvailable, setCustomizationAvailable] = useState(false)
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
   // The saved slug is what the snippet carries; the draft is what's in the box.
   const [slug, setSlug] = useState<string | null>(null)
   const [slugDraft, setSlugDraft] = useState('')
@@ -969,6 +975,9 @@ export function WidgetSection() {
           if (result.leadCaptureMode) setLeadCaptureMode(result.leadCaptureMode)
           if (result.answerScope) setAnswerScope(result.answerScope)
           setGuidance(result.guidance ?? null)
+          setAppearance(result.appearance ?? EMPTY_WIDGET_APPEARANCE)
+          setCustomizationAvailable(result.customizationAvailable === true)
+          setLogoUrl(result.logoUrl ?? null)
           setSlug(result.slug ?? null)
           setSlugDraft(result.slug ?? '')
         }
@@ -1206,6 +1215,15 @@ export function WidgetSection() {
             canManage={canManage}
             initialScope={answerScope}
             initialGuidance={guidance}
+          />
+
+          {/* Keyed the same way, for the same reason. */}
+          <WidgetAppearanceSettings
+            key={`${customizationAvailable}:${appearance.title ?? ''}:${appearance.welcome ?? ''}:${appearance.brandColor ?? ''}:${appearance.starterQuestions.join('|')}:${appearance.starterEnabled}:${appearance.followUpsEnabled}`}
+            canManage={canManage}
+            customizationAvailable={customizationAvailable}
+            initialAppearance={appearance}
+            initialLogoUrl={logoUrl}
           />
         </div>
       )}
@@ -1723,6 +1741,7 @@ export default function SettingsPage() {
       {activeTab === 'ai' && (
         <section>
           <AIModelSection />
+          <KbPageTitlesSection />
         </section>
       )}
 

@@ -20,7 +20,7 @@ Open **Knowledge Base** from the **Improve** group in the sidebar. The page has 
 />
 
 <Callout type="info">
-  The Manage and Knowledge coverage tabs are available on every plan. The Review queue needs the Pro plan or above. Self-hosted deployments have every feature unlocked.
+  The Manage and Knowledge coverage tabs are available on every plan. The Review queue and Flagged answers need the Pro plan or above. Self-hosted deployments have every feature unlocked.
 </Callout>
 
 ## How it fits together
@@ -38,7 +38,7 @@ Pick the method that matches where your knowledge already lives. Importing, uplo
 
 <Tabs items={['Web page or site', 'File upload', 'GitHub repository', 'Notion workspace']}>
   <Tab value="Web page or site">
-    Best for a public help center or documentation site. Importing reads each page, splits it by its headings, and saves each section as an article.
+    Best for a public help center or documentation site. Importing reads each page, splits it by its headings, and saves each section as an article titled with the page title and the heading, for example **Pricing › Pro**. The page title is what lets a loosely worded question like "what does it cost?" find a section headed only "Pro". Pages imported before section titles included the page are updated for you. Their sections get the page in front, taken from the page's address (for example **pricing › Pro**), and are re-indexed in the background. Only the title changes, never the section's text. If your workspace uses its own embedding key, or you self-host, run the update yourself from **Settings → AI Model → Update imported page titles**. It processes those sections with your key.
 
     <Steps>
       <Step>
@@ -222,7 +222,7 @@ The **Review** tab turns questions your knowledge base could not answer into new
 When the assistant answers a question that nothing in your knowledge base (or your team's earlier answers) covered, the question lands in the queue instead of disappearing:
 
 - **Support tickets** from your connected channels are added after the assistant has replied, so capturing a question never delays an answer. If the assistant's draft fully answered the question, it comes along as a starting point. If not, the item is marked **No usable answer — write one** and you write it.
-- **Website chat widget** questions are added when no article matched. The queue shows the question and the answer the assistant gave, never the visitor. Email addresses, phone numbers, and long digit runs are replaced with markers before the text is stored, and widget items are labelled as visitor-supplied text.
+- **Website chat widget** questions are added when no article matched. The queue shows the question and the answer the assistant gave, never the visitor. Email addresses, phone numbers, and long digit runs are replaced with markers before the text is stored, and widget items are labelled as visitor-supplied text. For a follow-up such as "and for teams?", the question is the complete version the assistant searched with ("Team plan price"), and the visitor's own words appear beside it under **Visitor asked**. They are cleared on the same schedule as the rest of the item's text.
 
 When the same question comes in again, the existing item's counter goes up (**Asked 4 times**) instead of adding a duplicate, and the most-asked questions are listed first.
 
@@ -239,6 +239,33 @@ When the same question comes in again, the existing item's counter goes up (**As
 </Steps>
 
 Nothing in the queue is searchable or shown to customers until you approve it. The **Review** tab shows how many items are waiting. Each workspace holds up to 500 unreviewed items at a time; when the queue is full the tab says so and new questions are not captured, so clear it regularly.
+
+## Flagged answers
+
+The **Flagged answers** tab shows answers a visitor marked as wrong. It is the other half of the Review queue: the queue holds questions the knowledge base could not answer, while a flagged answer is one the assistant gave, often from an article, that a visitor says was wrong or did not help. It requires the Pro plan or above and is visible to owners and admins only, because flags carry text typed by visitors.
+
+A visitor flags an answer with the thumbs-down under it in the [chat widget](/docs/product/chat-widget#flagging-an-answer). Each flag shows:
+
+- **What the visitor asked** and **what the widget answered**, as the server recorded them, never text the browser supplied.
+- **The reason** the visitor picked (wrong information, out of date, didn't answer the question, or something else) and their optional **note**, marked as unverified.
+- **The articles the answer cited**, each linking to its place in the **Manage** tab, so you can fix the source.
+- **Left an email for a follow-up**, when the visitor gave an address. It links to the [Leads](/docs/product/chat-widget#lead-capture) page.
+
+Flags are grouped by the article they cited, with the most-flagged article first and a count (**Cited in 4 flagged answers**), so you fix one article and clear every flag that pointed at it. An answer that cited more than one article appears under each. Answers that cited no article, or only articles you have since deleted, are listed under **Not tied to an article**.
+
+<Steps>
+  <Step>
+    Open the **Flagged answers** tab. **To review** lists open flags; **Resolved** and **Dismissed** show past decisions. The tab shows how many are open.
+  </Step>
+  <Step>
+    Click **Open article** on a group, or a cited article on a flag, and correct the article.
+  </Step>
+  <Step>
+    Click **Mark resolved** on each flag that is fixed, or **Dismiss** one that is not worth acting on. Either can be undone with **Move back to review**. If two people act on the same flag at once, only the first change applies and the second is told it was already handled.
+  </Step>
+</Steps>
+
+A lead that came from a flag shows the flagged answer next to the address on the **Leads** page, with the question, the reply and the reason; the note stays on this tab.
 
 ## Finding old saved resolutions
 
@@ -405,6 +432,9 @@ Anything short of every target is a no-go, with what is missing listed. Until a 
   </Accordion>
   <Accordion title="Review queue text retention">
     The text of rejected items is removed, and the text of approved items is removed 90 days after review (the approved article keeps its own copy). The item and its counter stay so a repeated question is still recognised.
+  </Accordion>
+  <Accordion title="Flagged answer text retention">
+    The question, reply and note of a flag are removed 90 days after it was made, and at once when you dismiss it. The flag, its reason and the articles it cited stay, so the counts and the grouping still make sense. A workspace can collect at most 200 flags a day.
   </Accordion>
   <Accordion title="Where the data lives (self-hosted)">
     Articles and source chunks are stored in the `kb_articles` and `kb_sources` tables in PostgreSQL. Questions waiting in the review queue are stored in `kb_review_items` until they are approved or rejected, and the per-article answer counts are stored in `kb_article_usage`. They persist across Docker restarts as long as you retain the `postgres-data` volume.

@@ -13,7 +13,21 @@ import {
   setWidgetGuidance,
   getWidgetSlug,
   setWidgetSlug,
+  getWidgetAppearance,
+  setWidgetAppearance,
 } from '@/lib/db/queries/widgets'
+import { orgHasFeature } from '@/lib/billing/entitlements-server'
+import { deleteWidgetLogo, getWidgetLogoVersion } from '@/lib/db/queries/widget-logos'
+import { widgetLogoPath } from '@/lib/widget/logo'
+import {
+  normalizeBrandColor,
+  normalizeStarterQuestions,
+  normalizeWidgetTitle,
+  readFollowUpsEnabled,
+  readStarterEnabled,
+  normalizeWidgetWelcome,
+  type WidgetAppearance,
+} from '@/lib/widget/appearance'
 import { parseAllowedOrigins } from '@/lib/widget/origin'
 import { isWidgetLeadCaptureMode, type WidgetLeadCaptureMode } from '@/lib/widget/lead-capture'
 import {
@@ -41,6 +55,12 @@ interface WidgetTokenResult {
   guidance?: string | null
   /** The public slug the embed snippet can use instead of the token, if set. */
   slug?: string | null
+  /** Title, welcome message and brand color the owner chose; each null for the default. */
+  appearance?: WidgetAppearance
+  /** Whether the plan includes widget customization (Pro and above). */
+  customizationAvailable?: boolean
+  /** The address of the workspace's logo, or null. Only given while the plan includes customization. */
+  logoUrl?: string | null
   error?: string
 }
 
@@ -58,8 +78,14 @@ export async function getWidgetTokenAction(): Promise<WidgetTokenResult> {
   const leadCaptureMode = await getWidgetLeadCaptureMode(access.orgId)
   const answerSettings = await getWidgetAnswerSettings(access.orgId)
   const slug = await getWidgetSlug(access.orgId)
+  const appearance = await getWidgetAppearance(access.orgId)
+  const customizationAvailable = await orgHasFeature(access.orgId, 'white_label_widget')
+  const logo = customizationAvailable ? await getWidgetLogoVersion(access.orgId) : null
   return {
     token: info.token,
+    appearance,
+    customizationAvailable,
+    logoUrl: logo ? widgetLogoPath(info.token, logo.etag) : null,
     slug,
     expiresAt: info.expiresAt,
     allowedOrigins: allowedOrigins ?? '',
@@ -205,4 +231,65 @@ export async function saveWidgetSlugAction(
   const result = await setWidgetSlug(access.orgId, raw.trim() === '' ? null : raw)
   if (!result.ok) return { error: result.error }
   return { slug: result.slug }
+}
+
+interface WidgetAppearanceResult {
+  appearance?: WidgetAppearance
+  /** Which field a message belongs to, so the form can show it next to the control. */
+  field?: 'title' | 'welcome' | 'brandColor' | 'starterQuestions'
+  error?: string
+}
+
+const CUSTOMIZATION_REQUIRES_PRO =
+  'Customizing the widget is included with Pro and above. Upgrade your plan to change its title, welcome message and color.'
+
+/**
+ * Saves the chat title, welcome message and brand color. Pro and above only:
+ * the plan is checked here, on the server, because the settings screen showing
+ * the controls locked is a courtesy and not the rule. Same owner/admin gate as
+ * the rest of the widget settings, and the workspace comes from the verified
+ * membership, never from the form. What is returned is exactly what was
+ * stored, so the form shows what is in use.
+ */
+export async function saveWidgetAppearanceAction(
+  _prevState: unknown,
+  formData: FormData
+): Promise<WidgetAppearanceResult> {
+  const access = await requireOrgAccess(WIDGET_ADMIN_ROLES)
+  if (!access.ok) return { error: access.error }
+  if (!(await orgHasFeature(access.orgId, 'white_label_widget'))) {
+    return { error: CUSTOMIZATION_REQUIRES_PRO }
+  }
+
+  const title = normalizeWidgetTitle(formData.get('title'))
+  if (!title.ok) return { field: 'title', error: title.error }
+  const welcome = normalizeWidgetWelcome(formData.get('welcome'))
+  if (!welcome.ok) return { field: 'welcome', error: welcome.error }
+  const color = normalizeBrandColor(formData.get('brandColor'))
+  if (!color.ok) return { field: 'brandColor', error: color.error }
+  const starters = normalizeStarterQuestions(formData.get('starterQuestions'))
+  if (!starters.ok) return { field: 'starterQuestions', error: starters.error }
+
+  const appearance = await setWidgetAppearance(access.orgId, {
+    title: title.value,
+    welcome: welcome.value,
+    brandColor: color.value,
+    starterQuestions: starters.value,
+    starterEnabled: readStarterEnabled(formData.get('starterEnabled')),
+    followUpsEnabled: readFollowUpsEnabled(formData.get('followUpsEnabled')),
+  })
+  return { appearance }
+}
+
+/** Puts the widget back to the answerLoops title, welcome message and color. */
+export async function resetWidgetAppearanceAction(): Promise<WidgetAppearanceResult> {
+  const access = await requireOrgAccess(WIDGET_ADMIN_ROLES)
+  if (!access.ok) return { error: access.error }
+  if (!(await orgHasFeature(access.orgId, 'white_label_widget'))) {
+    return { error: CUSTOMIZATION_REQUIRES_PRO }
+  }
+  const appearance = await setWidgetAppearance(access.orgId, { title: null, welcome: null, brandColor: null, starterQuestions: [], starterEnabled: true, followUpsEnabled: true })
+  // Back to the answerLoops look includes the answerLoops mark.
+  await deleteWidgetLogo(access.orgId)
+  return { appearance }
 }

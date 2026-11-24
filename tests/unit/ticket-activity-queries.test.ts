@@ -16,6 +16,7 @@ async function withDb(rows: (c: Call) => unknown[][] = () => []) {
     calls.push(call)
     return { rows: rows(call) }
   })
+  vi.spyOn(fakeDb, 'transaction').mockImplementation((callback) => callback(fakeDb as never))
   vi.doMock('@/lib/db/drizzle', () => ({ getDb: () => fakeDb }))
   vi.resetModules()
   return {
@@ -45,8 +46,8 @@ describe('markTicketSeen', () => {
     expect(calls).toHaveLength(2)
 
     const t = lower(calls[0].sql)
-    expect(t).toMatch(/^update "tickets" set "last_seen_at" = \$1 where \("tickets"\."id" = \$2 and "tickets"\."org_id" = \$3\) returning "id"/)
-    expect(calls[0].params.slice(1)).toEqual([7, 3])
+    expect(t).toMatch(/^update "tickets" set "last_seen_at" = greatest\(clock_timestamp\(\), "tickets"\."last_customer_reply_at"\) where \("tickets"\."id" = \$1 and "tickets"\."org_id" = \$2\) returning "id"/)
+    expect(calls[0].params).toEqual([7, 3])
 
     const n = lower(calls[1].sql)
     expect(n).toMatch(/^update "notifications" set "read" = \$1 where/)
@@ -66,12 +67,17 @@ describe('markTicketSeen', () => {
 
 describe('unseen activity queries', () => {
   it('getUnseenActivityTickets filters by org and unseen condition, newest customer reply first', async () => {
-    const { calls, tq } = await withDb(() => ticketRow())
+    const { calls, tq } = await withDb(() => [[...ticketRow()[0], '2026-10-02T00:00:00.123456Z|10:11:', 17]])
     const out = await tq.getUnseenActivityTickets(3, 5)
-    expect(out).toHaveLength(1)
+    expect(out.tickets).toHaveLength(1)
+    expect(out.total).toBe(17)
+    expect(out.snapshot).toBe('2026-10-02T00:00:00.123456Z|10:11:')
+    expect(calls).toHaveLength(1)
     const q = lower(calls[0].sql)
     expect(q).toContain('"tickets"."org_id" = $1')
     expect(q).toMatch(UNSEEN)
+    expect(q).toContain('pg_current_snapshot()')
+    expect(q).toContain('count(*) over ()')
     expect(q).toMatch(/order by "tickets"\."last_customer_reply_at" desc, "tickets"\."id" desc limit \$2/)
     expect(calls[0].params).toEqual([3, 5])
   })
@@ -81,32 +87,26 @@ describe('unseen activity queries', () => {
     await tq.getUnseenActivityTickets(3)
     expect(calls[0].params).toEqual([3, 8])
   })
-
-  it('countUnseenActivityTickets counts with the same condition in one org', async () => {
-    const { calls, tq } = await withDb(() => [[4]])
-    expect(await tq.countUnseenActivityTickets(3)).toBe(4)
-    const q = lower(calls[0].sql)
-    expect(q).toContain('count(*)')
-    expect(q).toContain('"tickets"."org_id" = $1')
-    expect(q).toMatch(UNSEEN)
-  })
 })
 
 describe('countUnseenActivityByPlatform', () => {
-  it('groups by channel with the unseen condition, scoped to one org', async () => {
+  const snapshot = '2026-10-02T00:00:00.123456Z|10:11:'
+
+  it('groups by channel with the unseen condition, scoped to one org and bounded by the snapshot cutoff', async () => {
     const { calls, tq } = await withDb(() => [['github', 8]])
-    await tq.countUnseenActivityByPlatform(3)
+    await tq.countUnseenActivityByPlatform(3, snapshot)
     const q = lower(calls[0].sql)
     expect(q).toContain('count(*)')
     expect(q).toContain('"tickets"."org_id" = $1')
     expect(q).toMatch(UNSEEN)
+    expect(q).toMatch(/"tickets"\."last_customer_reply_at" <= \$2::timestamptz/)
     expect(q).toMatch(/group by "tickets"\."source_platform"/)
-    expect(calls[0].params).toEqual([3])
+    expect(calls[0].params).toEqual([3, '2026-10-02T00:00:00.123456Z'])
   })
 
   it('orders largest first, then by channel display name', async () => {
     const { tq } = await withDb(() => [['slack', 3], ['mcp', 3], ['github', 8], ['discord', 3], ['email', 1]])
-    expect(await tq.countUnseenActivityByPlatform(3)).toEqual([
+    expect(await tq.countUnseenActivityByPlatform(3, snapshot)).toEqual([
       { platform: 'github', count: 8 },
       { platform: 'mcp', count: 3 },
       { platform: 'discord', count: 3 },
@@ -117,7 +117,7 @@ describe('countUnseenActivityByPlatform', () => {
 
   it('is empty when nothing is unseen', async () => {
     const { tq } = await withDb()
-    expect(await tq.countUnseenActivityByPlatform(3)).toEqual([])
+    expect(await tq.countUnseenActivityByPlatform(3, snapshot)).toEqual([])
   })
 })
 
@@ -198,8 +198,8 @@ describe('recordCustomerReply activity columns', () => {
     expect(updates).toHaveLength(1)
     const q = lower(updates[0].sql)
     expect(q).toContain('"last_activity_at" = $')
-    expect(q).toContain('"last_customer_reply_at" = $')
-    expect(q).not.toContain('last_seen_at')
+    expect(q).toContain('"last_customer_reply_at" = greatest(')
+    expect(q).toContain('"tickets"."last_seen_at" + interval')
   })
 })
 
