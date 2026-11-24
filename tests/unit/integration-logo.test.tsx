@@ -58,6 +58,14 @@ describe('IntegrationLogo', () => {
     expect(logo).toHaveTextContent(/^G$/)
   })
 
+  it('renders an official Groq mark rather than the monogram (issue #107)', () => {
+    render(<IntegrationLogo name="groq" />)
+    const logo = screen.getByRole('img', { name: 'Groq logo' })
+    expect(LOGO_GLYPHS.groq).toBeDefined()
+    expect(logo.querySelector('svg')).not.toBeNull()
+    expect(logo).not.toHaveTextContent(/\S/)
+  })
+
   it('draws the official OpenAI mark instead of the letter O', () => {
     render(<IntegrationLogo name="openai" />)
     const logo = screen.getByRole('img', { name: 'OpenAI logo' })
