@@ -32,10 +32,14 @@ function trackedFiles(): string[] {
 
 const TEXT_EXTENSIONS = new Set(['.ts', '.tsx', '.mdx', '.md', '.json', '.txt', '.yml', '.yaml'])
 
+const originUrl = execSync('git remote get-url origin', { cwd: repoRoot, encoding: 'utf-8' }).trim()
+
+// The DeadantCo fork's origin can never be the public repository, so this check only runs elsewhere.
+const isDeadantCoFork = /github\.com[/:]deadantco\/answerloops(\.git)?$/i.test(originUrl)
+
 describe('the public repository URL', () => {
-  it('is the repository the git remote actually points at', () => {
-    const remote = execSync('git remote get-url origin', { cwd: repoRoot, encoding: 'utf-8' }).trim()
-    expect(remote.replace(/\.git$/, '').toLowerCase()).toBe(GITHUB_URL.toLowerCase())
+  it.skipIf(isDeadantCoFork)('is the repository the git remote actually points at', () => {
+    expect(originUrl.replace(/\.git$/, '').toLowerCase()).toBe(GITHUB_URL.toLowerCase())
   })
 
   it('never appears anywhere as the pre-migration path, which redirects to the private archive', () => {

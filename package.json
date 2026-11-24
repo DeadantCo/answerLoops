@@ -1,6 +1,6 @@
 {
   "name": "community-platform",
-  "version": "0.6.8",
+  "version": "0.7.0",
   "private": true,
   "scripts": {
     "prepare": "test -f scripts/install-hooks.sh && sh scripts/install-hooks.sh || true",
@@ -70,7 +70,7 @@
     "lucide-react": "^1.56.0",
     "mammoth": "^1.13.0",
     "mermaid": "12.2.0",
-    "next": "16.4.1",
+    "next": "16.4.6",
     "next-auth": "5.0.0-beta.32",
     "pdf-parse": "^2.4.5",
     "postgres": "^3.4.9",
@@ -79,6 +79,7 @@
     "react-markdown": "9.0.3",
     "remark-gfm": "4.0.1",
     "resend": "^6.32.1",
+    "sharp": "^0.35.5",
     "stripe": "^23.0.0",
     "web-push": "^3.6.7",
     "zod": "^4.6.7"
