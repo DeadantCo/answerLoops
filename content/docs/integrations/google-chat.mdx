@@ -12,7 +12,7 @@ icon: MessageCircle
   }}
   trigger={{
     title: 'Chat app event',
-    text: 'Google Chat sends each new message in the space to answerLoops as it is posted, and answerLoops immediately answers Chat with a short acknowledgment. There is no polling.',
+    text: 'Google Chat sends answerLoops each message it delivers to the Chat app, which in a space means a message that @mentions the app or uses a slash command. answerLoops immediately answers Chat with a short acknowledgment. There is no polling.',
   }}
   steps={[
     { title: 'Create ticket', text: 'The message becomes a ticket, and a reply inside a thread that already has a ticket is added to it. Attachments are kept as links, and messages under 10 characters with no attachment are skipped.' },
@@ -31,7 +31,9 @@ icon: MessageCircle
 
 Google Chat connects differently than Slack or Discord. Google Chat's app model has no equivalent of Slack's "Add to Slack" OAuth button for installing across an arbitrary customer's Workspace — there's no redirect-based install answerLoops can drive. Instead, an org generates a one-time **connect code** in answerLoops, a Workspace admin adds the answerLoops app to a Chat space themselves, and posting that code in the space pairs it to the org.
 
-Every message in a paired space is ingested as a ticket, exactly like every other channel:
+Every message Google Chat delivers to the answerLoops app from a paired space is ingested as a ticket, exactly like every other channel. Google Chat decides what the app receives: in a space, a Chat app is sent a message only when someone @mentions it or uses one of its slash commands, and plain messages that do neither are never sent to answerLoops. In a direct message with the app, every message is delivered. Ask people to @mention the app when they want an answer from answerLoops.
+
+Once a message reaches answerLoops, it gets:
 - AI deflection with a configurable confidence threshold — gated by the **Automatic Deflections** toggle below
 - Ticket creation and deduplication
 - Thread-aware replies — a reply inside a Google Chat thread appends to its existing ticket instead of creating a new one
@@ -39,7 +41,7 @@ Every message in a paired space is ingested as a ticket, exactly like every othe
 - Escalation mention when AI confidence is low, addressed to a specific Chat user id you configure
 
 <Callout type="info">
-  **Automatic Deflections** is off by default for every newly connected platform. While it's off, even a high-confidence answer is held as a draft on the dashboard awaiting Approve/Edit/Dismiss instead of posting to the space automatically — the space gets a brief acknowledgment instead. Turn it on per-platform in **Integrations → Google Chat → Edit escalation, confidence & deflections**, toggle **Automatic Deflections**, then **Save**, once you trust the AI's answers going out unsupervised.
+  **Automatic Deflections** is off by default for every newly connected platform. While it's off, even a high-confidence answer to a message that reached answerLoops is held as a draft on the dashboard awaiting Approve/Edit/Dismiss instead of posting to the space automatically — the space gets a brief acknowledgment instead. Turn it on per-platform in **Integrations → Google Chat → Edit escalation, confidence & deflections**, toggle **Automatic Deflections**, then **Save**, once you trust the AI's answers going out unsupervised.
 </Callout>
 
 <Callout type="info">
@@ -149,6 +151,9 @@ See [Google Chat App Setup](/docs/self-hosting/google-chat-app) for the full one
   </Accordion>
   <Accordion title="Escalation mention never appears">
     The escalation user id must be the Chat resource name, formatted `users/<numeric id>` — not an email address or display name. Grab the correct id from the Google Chat API's people/membership lookups, or from a prior message by that user in the space.
+  </Accordion>
+  <Accordion title="Tickets only appear when someone @mentions the app">
+    This is how Google Chat delivers messages to a Chat app in a space: the app is sent a message only when it is @mentioned or a slash command is used, so plain messages never reach answerLoops. There is no setting in the Chat app configuration or in answerLoops that changes this. Ask people to @mention the app in the space, or have them message the app directly, where every message is delivered. The endpoint, `GOOGLE_CHAT_ENDPOINT_URL` and pairing are working correctly if mentioned messages create tickets.
   </Accordion>
   <Accordion title="Messages in the space aren't creating tickets">
     Confirm the space shows **Connected** on the Settings page (an unpaired space is simply ignored — not an error). Also check whether the message is very short (under 10 characters) with no attachment and isn't a reply inside an already-tracked thread; those are filtered as noise by design.

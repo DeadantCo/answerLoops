@@ -29,6 +29,10 @@ When you are done, your deployment has a Chat app listening at your public addre
 
     - **App name, avatar and description** to whatever you want people to see.
     - **Functionality** to "Receive 1:1 messages" and "Join spaces and group conversations".
+
+      <Callout type="info">
+        Google Chat decides which messages a Chat app receives, and no option in this configuration delivers every message in a space. In a space the app is sent a message only when someone @mentions it or uses a slash command. In a 1:1 message with the app, every message is delivered. Tell your team to @mention the app when they ask a question in a space.
+      </Callout>
     - **Connection settings → HTTP endpoint URL** to your public endpoint:
 
       ```text
@@ -65,6 +69,9 @@ A [Google Workspace Marketplace](https://developers.google.com/workspace/marketp
 <Accordions>
   <Accordion title="Messages in the space never reach answerLoops">
     Check that the HTTP endpoint URL in the Chat app configuration, `GOOGLE_CHAT_ENDPOINT_URL` and your real public address are all identical, and that the `app` service was restarted after you set the variables.
+  </Accordion>
+  <Accordion title="Tickets only appear when someone @mentions the app">
+    This is expected. In a space, Google Chat sends a Chat app only the messages that @mention it or use a slash command, and the app configuration has no setting that changes that. Setup is not broken if @mentioned messages create tickets. Ask people to @mention the app, or to message it directly.
   </Accordion>
   <Accordion title="The app cannot be added to a space">
     The Workspace admin on the installing side may need to enable third-party Chat apps for their domain first, and the person adding the app must be inside the **Visibility** list you configured.
